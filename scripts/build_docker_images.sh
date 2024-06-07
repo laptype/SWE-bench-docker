@@ -87,13 +87,15 @@ build_instance_image() {
     if [ -f "$dockerfile_path" ]; then
         base_dir=$(dirname "$dir")
         instance_id=$(basename "$dir")
+        base_dir="$(echo $base_dir | sed 's|//|/|g')"
         tag_base="${base_dir#$root_directory/}"
         tag_base="${tag_base%/*}"
-        tag_base="$(echo $tag_base | sed 's/__*/_/g')"
+        tag_base="$(echo $tag_base | sed 's/__*/_/g' | sed 's|//|/|g')"
         image_name="$base_image-${tag_base}-instance"
         echo "Building Docker image: $image_name:$instance_id for $dir/Dockerfile"
         docker build -t "$image_name:$instance_id" -f "$dockerfile_path" .
     fi
 }
+
 
 build_docker_images
