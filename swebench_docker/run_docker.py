@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 async def run_docker_evaluation(task_instance: dict, namespace: str, log_dir: str, timeout: int = 900, log_suffix: str = "", verbose: bool = False):
     repo_name = task_instance['repo'].replace("/", "_")
 
+    # 设置主机上的目录权限
+    chmod_output_dir_command = ['chmod', '-R', '777', log_dir]
+    # 使用 subprocess.run 来执行命令
+    result = subprocess.run(chmod_output_dir_command, check=True, capture_output=True, text=True)
+
     # Base64 encode the instance JSON to be sure it can be passed as an environment variable
     instance_b64 = base64.b64encode(json.dumps(task_instance).encode('utf-8')).decode('utf-8')
 
@@ -20,10 +25,11 @@ async def run_docker_evaluation(task_instance: dict, namespace: str, log_dir: st
     image_prefix = "swe-bench"
 
     # TODO: Change this when deciding
-    if "packages" in specifications and specifications["packages"] == "environment.yml":
-        container_log_dir = '/home/swe-bench/logs'
-    else:
-        container_log_dir = '/opt/logs'
+    # if "packages" in specifications and specifications["packages"] == "environment.yml":
+    #     container_log_dir = '/home/swe-bench/logs'
+    # else:
+    #     container_log_dir = '/opt/logs'
+    container_log_dir = '/logs'
 
     if specifications.get("instance_image", False):
         docker_image = f"{namespace}/{image_prefix}-{repo_name}-instance:{task_instance['instance_id']}"
