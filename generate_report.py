@@ -1,5 +1,6 @@
 import argparse
 import json
+from tempfile import NamedTemporaryFile
 
 from swebench import (
     get_eval_refs,
@@ -25,22 +26,46 @@ def _generate_table(
 
     return table_md
 
+
+def convert_json_to_jsonl(input_path: str, output_path: str):
+    with open(input_path, "r") as input_file:
+        data = json.load(input_file)
+    with open(output_path, "w") as output_file:
+        for item in data:
+            output_file.write(json.dumps(item) + "\n")
+
+
 def generate_report(
     swe_bench_tasks: str, predictions_path: str, log_dir: str, output_dir: str
 ):
     instances = get_eval_refs(swe_bench_tasks)
 
-    predictions = get_instances(predictions_path)
-    model_name_or_path = predictions[0]["model_name_or_path"]
+    with NamedTemporaryFile(buffering=0, prefix="predictions-", suffix=".jsonl") as jsonl_file:
+        if predictions_path.endswith(".json"):
+            convert_json_to_jsonl(predictions_path, jsonl_file.name)
+            predictions_path = jsonl_file.name
 
-    summary = get_model_eval_summary(
-        predicts_path=predictions_path,
-        eval_dir=log_dir,
-        swe_bench_tasks=swe_bench_tasks,
-    )
+        predictions = get_instances(predictions_path)
+        model_name_or_path = predictions[0]["model_name_or_path"]
 
-    with open(f"{output_dir}/summary.json", "w") as f:
-        f.write(json.dumps(summary, indent=4))
+        summary = get_model_eval_summary(
+            predicts_path=predictions_path,
+            eval_dir=log_dir,
+            swe_bench_tasks=swe_bench_tasks,
+        )
+        with open(f"{output_dir}/summary.json", "w") as f:
+            f.write(json.dumps(summary, indent=4))
+
+        report = get_model_report(
+            verbose=True,
+            model=model_name_or_path,
+            predictions_path=predictions_path,
+            log_dir=log_dir,
+            swe_bench_tasks=swe_bench_tasks,
+        )
+        report = {k: sorted(v) for k, v in report.items()}
+        with open(f"{output_dir}/report.json", "w") as f:
+            f.write(json.dumps(report, indent=4))
 
     report_md = f"# Benchmark results"
 
@@ -59,22 +84,11 @@ def generate_report(
 | -------- | ----- | ---- |
 | Yes | {report_by_patch_status['case_resolution_counts'].get('RESOLVED_FULL', 0)} | {report_by_patch_status['case_resolution_rates'].get('RESOLVED_FULL', 0)}% |
 | Partially | {report_by_patch_status['case_resolution_counts'].get('RESOLVED_PARTIAL', 0)} | {report_by_patch_status['case_resolution_rates'].get('RESOLVED_PARTIAL', 0)}% |
-| No | {report_by_patch_status['case_resolution_counts'].get('RESOLVED_NO', 0)} | {report_by_patch_status['case_resolution_rates'].get('RESOLVED_NO', 0)}% |  
+| No | {report_by_patch_status['case_resolution_counts'].get('RESOLVED_NO', 0)} | {report_by_patch_status['case_resolution_rates'].get('RESOLVED_NO', 0)}% |
 """""
 
     print(case_resolution)
     report_md += case_resolution
-
-    report = get_model_report(
-        verbose=True,
-        model=model_name_or_path,
-        predictions_path=predictions_path,
-        log_dir=log_dir,
-        swe_bench_tasks=swe_bench_tasks,
-    )
-
-    with open(f"{output_dir}/report.json", "w") as f:
-        f.write(json.dumps(report, indent=4))
 
     report_md += f"\n\n## Benchmark instances"
 

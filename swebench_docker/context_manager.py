@@ -142,6 +142,11 @@ class TaskEnvContextManager:
         self.log.write(enter_msg, mode="w")
 
         self.exec(
+            f"git config --global --add safe.directory {self.repo_dir}".split(
+                " "
+            )
+        )
+        self.exec(
             f"git -c advice.detachedHead=false checkout {self.instance['base_commit']}".split(
                 " "
             )
@@ -181,6 +186,12 @@ class TaskEnvContextManager:
         Returns:
             bool: True if patch applied successfully, False otherwise
         """
+        init_diff_patch_path = os.path.join(
+            os.path.dirname(self.repo_dir.rstrip("/")),
+            f"temp_{self.instance_id}_{patch_type}_init.patch",
+        )
+        self.exec(f"git diff > {init_diff_patch_path}", shell=True)
+
         # If patch is `None`, indicate in log and skip
         if patch is None:
             self.log.write(f"Patch is `None` ({patch_type})")
@@ -208,6 +219,20 @@ class TaskEnvContextManager:
             f"git apply -v -R {patch_path}" if revert else f"git apply -v {patch_path}"
         )
         out_patch = self.exec(apply_cmd.split(" "), raise_error=False, check=False)
+
+        # If git command fails, try patch command
+        if out_patch.returncode != 0:
+            # Patch may has been partially applied so we should revert it.
+            # NOTE: we do not revert the test patch because it may unintentionally revert previously applied patches
+            if patch_type != PatchType.PATCH_TEST.value:
+                self.exec("git restore .".split(" "))
+                # revert to the state of the repo before the patch was applied
+                output = self.exec(f"git apply {init_diff_patch_path}".split(), raise_error=False, check=False)
+                self.log.write(f"Output (git apply - revert to initial state): {output.stdout}")
+            apply_cmd = (f"patch -R --batch --fuzz=5 -p1 -i {patch_path}" if revert
+                         else f"patch --batch --fuzz=5 -p1 -i {patch_path}")
+            out_patch = self.exec(apply_cmd.split(" "), raise_error=False, check=False)
+
         # TODO os.remove(patch_path)
 
         log_cmd = "Revert" if revert else "Apply"
@@ -219,6 +244,12 @@ class TaskEnvContextManager:
                 f.write(out_patch.stdout)
                 if out_patch.stderr:
                     f.write(out_patch.stderr)
+                if patch_type != PatchType.PATCH_TEST.value and "patching" in out_patch.stdout:
+                    # Patch has been partially applied so we should revert it.
+                    self.exec("git restore .".split(" "))
+                    # revert to the state of the repo before the patch was applied
+                    output = self.exec(f"git apply {init_diff_patch_path}".split(), raise_error=False, check=False)
+                    self.log.write(f"Output (git apply - revert to initial state): {output.stdout}")
             return False
 
         # Patch apply succeeded

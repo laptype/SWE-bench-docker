@@ -59,9 +59,11 @@ def main(
             patch_type = PatchType.PATCH_PRED.value
 
         # Run testing script
+        prediction_patch = task_instance[KEY_PREDICTION]
+        test_patch = task_instance["test_patch"]
         if (
-                not tcm.apply_patch(task_instance[KEY_PREDICTION], patch_type=patch_type)
-                or not tcm.apply_patch(task_instance["test_patch"], patch_type=PatchType.PATCH_TEST.value)
+                (prediction_patch and not tcm.apply_patch(prediction_patch, patch_type=patch_type))
+                or (test_patch and not tcm.apply_patch(test_patch, patch_type=PatchType.PATCH_TEST.value))
                 or not tcm.run_tests_task(task_instance)
         ):
             logger.warning("Evaluation failed")
@@ -71,7 +73,13 @@ def main(
 
 
 if __name__ == "__main__":
-    assert os.getenv('INSTANCE') is not None, "INSTANCE environment variable is not set"
+    TASK_INSTANCE_JSON = "/home/swe-bench/task_instance.json"
+    if os.path.exists(TASK_INSTANCE_JSON):
+        with open(TASK_INSTANCE_JSON, "r") as f:
+            task_instance = json.load(f)
+    else:
+        assert os.getenv('INSTANCE') is not None, "INSTANCE environment variable is not set"
+        task_instance = json.loads(base64.b64decode(os.getenv('INSTANCE')).decode('utf-8'))
     assert os.getenv('LOG_DIR') is not None, "LOG_DIR environment variable is not set"
     assert os.getenv('TESTBED_NAME') is not None, "TESTBED_NAME environment variable is not set"
 
@@ -81,7 +89,6 @@ if __name__ == "__main__":
 
     assert repo_dir, "REPO_DIR environment variable is not set"
 
-    task_instance = json.loads(base64.b64decode(os.getenv('INSTANCE')).decode('utf-8'))
 
     main(
         task_instance=task_instance,
